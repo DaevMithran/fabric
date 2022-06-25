@@ -16,6 +16,7 @@ import (
 	"github.com/golang/protobuf/proto"
 	"github.com/hyperledger/fabric-protos-go/common"
 	"github.com/hyperledger/fabric-protos-go/peer"
+	"github.com/hyperledger/fabric-protos-go/gossip"
 	"github.com/hyperledger/fabric/bccsp"
 	"github.com/hyperledger/fabric/common/flogging"
 	commonledger "github.com/hyperledger/fabric/common/ledger"
@@ -33,6 +34,8 @@ import (
 	"github.com/hyperledger/fabric/core/ledger/pvtdatastorage"
 	"github.com/hyperledger/fabric/internal/pkg/txflags"
 	"github.com/hyperledger/fabric/protoutil"
+	ffconfig "github.com/hyperledger/fabric/fastfabric/config"
+	ffgossip "github.com/hyperledger/fabric/fastfabric/gossip"
 	"github.com/pkg/errors"
 )
 
@@ -636,6 +639,20 @@ func (l *kvLedger) commit(pvtdataAndBlock *ledger.BlockAndPvtData, commitOpts *l
 		return err
 	}
 	elapsedBlockProcessing := time.Since(startBlockProcessing)
+
+	if ffconfig.IsEndorser && blockNo > 1 {
+		logger.Infof("Queuing block [%d] for gossip", blockNo)
+		marshaledBlock, err := proto.Marshal(block)
+		if err != nil {
+			panic(err)
+		}
+		pl := &gossip.Payload{
+			Data: marshaledBlock,
+			SeqNum: blockNo,
+		}
+		ffgossip.GetQueue(blockNo) <- pl
+		logger.Infof("Queuing block [%d] done", blockNo)
+	}
 
 	startBlockstorageAndPvtdataCommit := time.Now()
 	logger.Debugf("[%s] Adding CommitHash to the block [%d]", l.ledgerID, blockNo)

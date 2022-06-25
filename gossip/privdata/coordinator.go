@@ -24,6 +24,7 @@ import (
 	privdatacommon "github.com/hyperledger/fabric/gossip/privdata/common"
 	"github.com/hyperledger/fabric/gossip/util"
 	"github.com/hyperledger/fabric/protoutil"
+	ffconfig "github.com/hyperledger/fabric/fastfabric/config"
 	"github.com/pkg/errors"
 )
 
@@ -161,12 +162,14 @@ func (c *coordinator) StoreBlock(block *common.Block, privateDataSets util.PvtDa
 
 	c.logger.Debugf("Validating block [%d]", block.Header.Number)
 
-	validationStart := time.Now()
-	err := c.Validator.Validate(block)
-	c.reportValidationDuration(time.Since(validationStart))
-	if err != nil {
-		c.logger.Errorf("Validation failed: %+v", err)
-		return err
+	if !ffconfig.IsEndorser || block.Header.Number <=1 {
+		validationStart := time.Now()
+		err := c.Validator.Validate(block)
+		c.reportValidationDuration(time.Since(validationStart))
+		if err != nil {
+			c.logger.Errorf("Validation failed: %+v", err)
+			return err
+		}
 	}
 
 	blockAndPvtData := &ledger.BlockAndPvtData{

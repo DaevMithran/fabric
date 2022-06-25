@@ -19,7 +19,9 @@ import (
 	"github.com/hyperledger/fabric/internal/pkg/identity"
 	"github.com/hyperledger/fabric/internal/pkg/peer/orderers"
 	"github.com/hyperledger/fabric/protoutil"
-
+	ffgossip "github.com/hyperledger/fabric/fastfabric/gossip"
+	ffconfig "github.com/hyperledger/fabric/fastfabric/config"
+	
 	"github.com/golang/protobuf/proto"
 	"github.com/pkg/errors"
 	"google.golang.org/grpc"
@@ -226,6 +228,10 @@ func (d *Deliverer) processMsg(msg *orderer.DeliverResponse) error {
 		return errors.Errorf("received bad status %v from orderer", t.Status)
 	case *orderer.DeliverResponse_Block:
 		blockNum := t.Block.Header.Number
+		if blockNum > 1 && !ffconfig.IsEndorser {
+			return nil
+		}
+		d.Logger.Infof("Received block [%d]", blockNum)
 		if err := d.BlockVerifier.VerifyBlock(gossipcommon.ChannelID(d.ChannelID), blockNum, t.Block); err != nil {
 			return errors.WithMessage(err, "block from orderer could not be verified")
 		}
@@ -242,16 +248,16 @@ func (d *Deliverer) processMsg(msg *orderer.DeliverResponse) error {
 		}
 
 		// Use payload to create gossip message
-		gossipMsg := &gossip.GossipMessage{
-			Nonce:   0,
-			Tag:     gossip.GossipMessage_CHAN_AND_ORG,
-			Channel: []byte(d.ChannelID),
-			Content: &gossip.GossipMessage_DataMsg{
-				DataMsg: &gossip.DataMessage{
-					Payload: payload,
-				},
-			},
-		}
+		// gossipMsg := &gossip.GossipMessage{
+		// 	Nonce:   0,
+		// 	Tag:     gossip.GossipMessage_CHAN_AND_ORG,
+		// 	Channel: []byte(d.ChannelID),
+		// 	Content: &gossip.GossipMessage_DataMsg{
+		// 		DataMsg: &gossip.DataMessage{
+		// 			Payload: payload,
+		// 		},
+		// 	},
+		// }
 
 		d.Logger.Debugf("Adding payload to local buffer, blockNum = [%d]", blockNum)
 		// Add payload to local state payloads buffer
@@ -263,8 +269,19 @@ func (d *Deliverer) processMsg(msg *orderer.DeliverResponse) error {
 			return nil
 		}
 		// Gossip messages with other nodes
-		d.Logger.Debugf("Gossiping block [%d]", blockNum)
-		d.Gossip.Gossip(gossipMsg)
+		// d.Logger.Debugf("Gossiping block [%d]", blockNum)
+		// d.Gossip.Gossip(gossipMsg)
+
+		if !ffconfig.IsEndorser{
+			gossipChan:= ffgossip.GetQueue(blockNum)
+			go func(c chan *gossip.Payload) {
+				// Gossip messages with other nodes
+				d.Logger.Infof("[%s] Gossiping block [%d], peers number [%d]", d.chainID, blockNum, numberOfPeers)
+				// Use payload to create gossip message
+				gossipMsg := createGossipMsg(d.ChannelID, <-c)
+				d.Gossip.Gossip(gossipMsg)
+			}(gossipChan)
+		}
 		return nil
 	default:
 		d.Logger.Warningf("Received unknown: %v", t)
@@ -281,6 +298,20 @@ func (d *Deliverer) Stop() {
 	default:
 		close(d.DoneC)
 	}
+}
+
+func createGossipMsg(channelID string, payload *gossip.Payload) *gossip.GossipMessage {
+	gossipMsg := &gossip.GossipMessage{
+		Nonce:   0,
+		Tag:     gossip.GossipMessage_CHAN_AND_ORG,
+		Channel: []byte(channelID),
+		Content: &gossip.GossipMessage_DataMsg{
+			DataMsg: &gossip.DataMessage{
+				Payload: payload,
+			},
+		},
+	}
+	return gossipMsg
 }
 
 func (d *Deliverer) connect(seekInfoEnv *common.Envelope) (orderer.AtomicBroadcast_DeliverClient, *orderers.Endpoint, func(), error) {
