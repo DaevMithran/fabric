@@ -1,0 +1,19 @@
+{
+  "name": "benchmark",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "dependencies": {
+    "@grpc/grpc-js": "^1.6.7",
+    "@hyperledger/caliper-cli": "^0.5.0",
+    "@hyperledger/fabric-gateway": "^1.0.1",
+    "uuid": "^8.3.2"
+  },
+  "devDependencies": {},
+  "scripts": {
+    "bench": "caliper launch manager --caliper-workspace . --caliper-benchconfig ./config.yaml --caliper-networkconfig ./network.yaml --caliper-flow-only-test --caliper-fabric-gateway-enabled"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC"
+}
